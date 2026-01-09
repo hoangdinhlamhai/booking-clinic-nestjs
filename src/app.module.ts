@@ -6,6 +6,9 @@ import { SupabaseModule } from './supabase';
 import { ClinicsModule } from './clinics';
 import { ServicesModule } from './services';
 import { AuthModule } from './auth';
+import { SepayModule } from './sepay';
+import { AvailableSlotsModule } from './available-slots';
+import { BookingsModule } from './bookings';
 
 @Module({
   imports: [
@@ -20,8 +23,12 @@ import { AuthModule } from './auth';
     AuthModule,
     ClinicsModule,
     ServicesModule,
+    SepayModule,
+    AvailableSlotsModule,
+    BookingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule { }
+
