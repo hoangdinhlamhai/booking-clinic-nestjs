@@ -27,16 +27,22 @@ export class SepayService {
 
         const rawContent = payload?.content ?? payload?.description ?? '';
 
-        // Use Regex to find DATLICH_... pattern
-        const match = rawContent.match(/DATLICH_?([a-zA-Z0-9-]+)/);
+
+        const match = rawContent.match(/DATLICH[\s._-]?([a-zA-Z0-9-]+)/i);
 
         if (!match) {
             console.error('NO DATLICH BOOKING ID FOUND IN CONTENT:', rawContent);
             return { ok: true };
         }
 
-        const bookingId = match[1];
-        console.log('EXTRACTED BOOKING ID:', bookingId);
+        let bookingId = match[1];
+        console.log('EXTRACTED BOOKING ID RAW:', bookingId);
+
+        // Reconstruct UUID if it's stripped (32 hex chars)
+        if (bookingId.length === 32 && !bookingId.includes('-')) {
+            bookingId = `${bookingId.slice(0, 8)}-${bookingId.slice(8, 12)}-${bookingId.slice(12, 16)}-${bookingId.slice(16, 20)}-${bookingId.slice(20)}`;
+            console.log('FORMATTED BOOKING ID (UUID):', bookingId);
+        }
 
         const paidAmount = Number(payload?.transferAmount ?? 0);
 
