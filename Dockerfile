@@ -38,11 +38,13 @@ ENV NODE_ENV=production
 # Copy package files
 COPY package*.json ./
 
-# Install only production dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install ALL dependencies (need ts-node for seed script)
+RUN npm ci && npm cache clean --force
 
-# Copy prisma schema and generate Prisma Client
+# Copy prisma folder (schema + seed script)
 COPY prisma ./prisma
+
+# Generate Prisma Client
 RUN npx prisma generate
 
 # Copy built application from builder stage
@@ -65,5 +67,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
-# Start the application
-CMD ["node", "dist/main"]
+# Run prisma db push to create/sync tables, then seed data, then start the application
+CMD npx prisma db push --skip-generate && npx prisma db seed && node dist/main
