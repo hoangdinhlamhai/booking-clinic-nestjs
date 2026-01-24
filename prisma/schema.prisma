@@ -1,0 +1,243 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String    @db.VarChar
+  phone              String?   @unique @db.Text
+  email              String    @db.Text
+  password           String?   @db.Text
+  role               String?   @default("patient") @db.VarChar
+  avatarUrl          String?   @map("avatar_url") @db.Text
+  isActive           Boolean?  @default(true) @map("is_active")
+  createdAt          DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  provider           String    @default("credentials") @db.Text
+  providerId         String?   @map("provider_id") @db.Text
+  displayId          String?   @unique @map("display_id") @db.Text
+  birthDate          DateTime? @map("birth_date") @db.Date
+  gender             String?   @db.VarChar
+  address            String?   @db.Text
+  medicalHistory     String?   @map("medical_history") @db.Text
+  allergies          String?   @db.Text
+  bloodType          String?   @map("blood_type") @db.VarChar
+  externalPatientId  String?   @map("external_patient_id") @db.VarChar
+  updatedAt          DateTime? @map("updated_at") @db.Timestamptz
+
+  // Relations
+  doctor              Doctor?
+  bookingsAsUser      Booking[]            @relation("BookingUser")
+  bookingsAsAssigner  Booking[]            @relation("BookingAssigner")
+  paymentsAsCashier   Payment[]            @relation("PaymentCashier")
+  examinationSessions ExaminationSession[] @relation("SessionPatient")
+
+  @@map("users")
+}
+
+model Clinic {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String    @db.Text
+  address     String?   @db.Text
+  email       String    @unique @db.Text
+  phone       String    @unique @db.Text
+  imageUrl    String?   @map("image_url") @db.Text
+  description String?   @db.Text
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  doctors  Doctor[]
+  bookings Booking[]
+
+  @@map("clinics")
+}
+
+model Service {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String    @unique @db.Text
+  description     String?   @db.Text
+  price           Int
+  durationMinutes Int?      @default(30) @map("duration_minutes")
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  bookings       Booking[]
+  doctorServices DoctorService[]
+
+  @@map("services")
+}
+
+model Doctor {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String?   @unique @map("user_id") @db.Uuid
+  clinicId     String?   @map("clinic_id") @db.Uuid
+  specialty    String    @db.Text
+  degree       String?   @db.Text
+  pricePerSlot Int?      @map("price_per_slot")
+  bio          String?   @db.Text
+  isAvailable  Boolean?  @default(true) @map("is_available")
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  user           User?            @relation(fields: [userId], references: [id])
+  clinic         Clinic?          @relation(fields: [clinicId], references: [id])
+  bookings       Booking[]
+  schedules      DoctorSchedule[]
+  doctorServices DoctorService[]
+
+  @@map("doctors")
+}
+
+model DoctorSchedule {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  doctorId    String    @map("doctor_id") @db.Uuid
+  date        DateTime  @db.Date
+  shiftName   String?   @map("shift_name") @db.Text
+  startTime   DateTime  @map("start_time") @db.Time(6)
+  endTime     DateTime  @map("end_time") @db.Time(6)
+  maxPatients Int?      @default(10) @map("max_patients")
+  isAvailable Boolean?  @default(true) @map("is_available")
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  doctor Doctor @relation(fields: [doctorId], references: [id])
+
+  @@map("doctor_schedules")
+}
+
+model DoctorService {
+  doctorId  String @map("doctor_id") @db.Uuid
+  serviceId String @map("service_id") @db.Uuid
+
+  // Relations
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+
+  @@id([doctorId, serviceId])
+  @@map("doctor_services")
+}
+
+model Booking {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String?   @map("user_id") @db.Uuid
+  clinicId       String?   @map("clinic_id") @db.Uuid
+  serviceId      String?   @map("service_id") @db.Uuid
+  patientName    String    @map("patient_name") @db.Text
+  patientPhone   String    @map("patient_phone") @db.Text
+  gender         String?   @db.Text
+  age            Int?
+  symptoms       String?   @db.Text
+  bookingTime    DateTime  @map("booking_time") @db.Timestamp(6)
+  doctorId       String?   @map("doctor_id") @db.Uuid
+  assignedBy     String?   @map("assigned_by") @db.Uuid
+  staffNote      String?   @map("staff_note") @db.Text
+  status         String?   @default("pending") @db.VarChar
+  createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  displayId      String?   @unique @map("display_id") @db.Text
+  address        String?   @db.Text
+  medicalHistory String?   @map("medical_history") @db.Text
+  allergies      String?   @db.Text
+  bloodType      String?   @map("blood_type") @db.VarChar
+  updatedAt      DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  user                User?                @relation("BookingUser", fields: [userId], references: [id])
+  clinic              Clinic?              @relation(fields: [clinicId], references: [id])
+  service             Service?             @relation(fields: [serviceId], references: [id])
+  doctor              Doctor?              @relation(fields: [doctorId], references: [id])
+  assigner            User?                @relation("BookingAssigner", fields: [assignedBy], references: [id])
+  payment             Payment?
+  medicalRecord       MedicalRecord?
+  examinationSessions ExaminationSession[]
+
+  @@map("bookings")
+}
+
+model Payment {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId       String?   @unique @map("booking_id") @db.Uuid
+  amount          Int
+  method          String?   @default("banking") @db.VarChar
+  status          String?   @default("pending") @db.VarChar
+  transactionCode String?   @map("transaction_code") @db.Text
+  cashierId       String?   @map("cashier_id") @db.Uuid
+  paymentDate     DateTime? @map("payment_date") @db.Timestamp(6)
+  createdAt       DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  booking Booking? @relation(fields: [bookingId], references: [id])
+  cashier User?    @relation("PaymentCashier", fields: [cashierId], references: [id])
+
+  @@map("payments")
+}
+
+model ExaminationSession {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  patientId      String?   @map("patient_id") @db.Uuid
+  appointmentId  String?   @map("appointment_id") @db.Uuid
+  visitNumber    Int       @map("visit_number")
+  chiefComplaint String?   @map("chief_complaint") @db.Text
+  visitId        String?   @map("visit_id") @db.VarChar
+  status         String    @default("active") @db.VarChar
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+  bookingId      String?   @map("booking_id") @db.Uuid
+
+  // Relations
+  patient           User?              @relation("SessionPatient", fields: [patientId], references: [id])
+  booking           Booking?           @relation(fields: [bookingId], references: [id])
+  medicalRecords    MedicalRecord[]
+  comparisonRecords ComparisonRecord[]
+
+  @@map("examination_sessions")
+}
+
+model MedicalRecord {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bookingId    String?   @unique @map("booking_id") @db.Uuid
+  diagnosis    String    @db.Text
+  prescription String?   @db.Text
+  doctorNotes  String?   @map("doctor_notes") @db.Text
+  createdAt    DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  sessionId    String?   @map("session_id") @db.Uuid
+  subjective   String?   @db.Text
+  objective    String?   @db.Text
+  assessment   String?   @db.Text
+  plan         String?   @db.Text
+  icdCodes     Json?     @map("icd_codes") @db.JsonB
+  status       String    @default("draft") @db.VarChar
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamp(6)
+
+  // Relations
+  booking           Booking?           @relation(fields: [bookingId], references: [id])
+  session           ExaminationSession? @relation(fields: [sessionId], references: [id])
+  comparisonRecords ComparisonRecord[]
+
+  @@map("medical_records")
+}
+
+model ComparisonRecord {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  timestamp       DateTime  @default(now()) @db.Timestamp(6)
+  aiResults       Json      @map("ai_results") @db.JsonB
+  doctorResults   Json      @map("doctor_results") @db.JsonB
+  comparison      Json      @db.JsonB
+  matchScore      Float     @map("match_score") @db.Real
+  caseId          String?   @map("case_id") @db.Text
+  sessionId       String?   @map("session_id") @db.Uuid
+  medicalRecordId String?   @map("medical_record_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+
+  // Relations
+  session       ExaminationSession? @relation(fields: [sessionId], references: [id])
+  medicalRecord MedicalRecord?      @relation(fields: [medicalRecordId], references: [id])
+
+  @@map("comparison_records")
+}

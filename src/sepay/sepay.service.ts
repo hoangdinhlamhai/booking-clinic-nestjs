@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma';
 import { SepayWebhookPayload, GenerateQRParams } from './dto';
 
 @Injectable()
 export class SepayService {
-    constructor(private supabaseService: SupabaseService) { }
+    constructor(private prisma: PrismaService) { }
 
     /**
      * Generate Sepay QR code URL
@@ -51,17 +51,15 @@ export class SepayService {
 
         // Get booking
         console.log('LOOKING UP BOOKING ID:', bookingId);
-        const { data: booking, error: bookingErr } = await this.supabaseService
-            .getAdminClient()
-            .from('bookings')
-            .select('id, status')
-            .eq('id', bookingId)
-            .single();
+        const booking = await this.prisma.booking.findUnique({
+            where: { id: bookingId },
+            select: { id: true, status: true },
+        });
 
-        console.log('BOOKING LOOKUP RESULT:', { booking, error: bookingErr });
+        console.log('BOOKING LOOKUP RESULT:', booking);
 
-        if (bookingErr || !booking) {
-            console.error('BOOKING NOT FOUND:', bookingId, 'ERROR:', bookingErr);
+        if (!booking) {
+            console.error('BOOKING NOT FOUND:', bookingId);
             return { ok: true };
         }
 
@@ -73,18 +71,18 @@ export class SepayService {
 
         // Get payment
         console.log('LOOKING UP PAYMENT FOR BOOKING:', booking.id);
-        const { data: payment, error: payErr } = await this.supabaseService
-            .getAdminClient()
-            .from('payments')
-            .select('id, amount, status')
-            .eq('booking_id', booking.id)
-            .eq('status', 'pending')
-            .single();
+        const payment = await this.prisma.payment.findFirst({
+            where: {
+                bookingId: booking.id,
+                status: 'pending',
+            },
+            select: { id: true, amount: true, status: true },
+        });
 
-        console.log('PAYMENT LOOKUP RESULT:', { payment, error: payErr });
+        console.log('PAYMENT LOOKUP RESULT:', payment);
 
-        if (payErr || !payment) {
-            console.error('PAYMENT NOT FOUND FOR BOOKING:', bookingId, 'ERROR:', payErr);
+        if (!payment) {
+            console.error('PAYMENT NOT FOUND FOR BOOKING:', bookingId);
             return { ok: true };
         }
 
@@ -97,31 +95,29 @@ export class SepayService {
 
         // Update payment status
         console.log('UPDATING PAYMENT STATUS TO PAID...');
-        const { error: updatePaymentErr } = await this.supabaseService
-            .getAdminClient()
-            .from('payments')
-            .update({
-                status: 'paid',
-                method: 'sepay',
-                transaction_code: payload?.referenceCode ?? null,
-                payment_date: new Date().toISOString(),
-            })
-            .eq('id', payment.id);
-
-        if (updatePaymentErr) {
-            console.error('FAILED TO UPDATE PAYMENT:', updatePaymentErr);
+        try {
+            await this.prisma.payment.update({
+                where: { id: payment.id },
+                data: {
+                    status: 'paid',
+                    method: 'sepay',
+                    transactionCode: payload?.referenceCode ?? null,
+                    paymentDate: new Date(),
+                },
+            });
+        } catch (error) {
+            console.error('FAILED TO UPDATE PAYMENT:', error);
         }
 
         // Update booking status
         console.log('UPDATING BOOKING STATUS TO PAID...');
-        const { error: updateBookingErr } = await this.supabaseService
-            .getAdminClient()
-            .from('bookings')
-            .update({ status: 'paid' })
-            .eq('id', booking.id);
-
-        if (updateBookingErr) {
-            console.error('FAILED TO UPDATE BOOKING:', updateBookingErr);
+        try {
+            await this.prisma.booking.update({
+                where: { id: booking.id },
+                data: { status: 'paid' },
+            });
+        } catch (error) {
+            console.error('FAILED TO UPDATE BOOKING:', error);
         }
 
         console.log('=== BOOKING PAID SUCCESSFULLY:', bookingId, '===');

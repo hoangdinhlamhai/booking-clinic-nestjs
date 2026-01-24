@@ -2,24 +2,23 @@ import {
     Injectable,
     BadRequestException,
     NotFoundException,
-    UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma';
 import { CreateBookingDto, BookingResponse } from './dto';
 
 @Injectable()
 export class BookingsService {
     constructor(
-        private supabaseService: SupabaseService,
+        private prisma: PrismaService,
         private jwtService: JwtService,
     ) { }
 
     /**
      * Check if booking is expired (default 5 minutes)
      */
-    private isExpired(createdAt: string, minutes = 5): boolean {
-        const created = new Date(createdAt + 'Z').getTime();
+    private isExpired(createdAt: Date, minutes = 5): boolean {
+        const created = createdAt.getTime();
         return Date.now() - created > minutes * 60 * 1000;
     }
 
@@ -50,45 +49,37 @@ export class BookingsService {
         createBookingDto: CreateBookingDto,
         userId?: string,
     ): Promise<{ bookingId: string }> {
-        // Create booking
-        const { data: booking, error: bookingError } = await this.supabaseService
-            .getAdminClient()
-            .from('bookings')
-            .insert({
-                user_id: userId ?? null,
-                clinic_id: createBookingDto.clinic,
-                service_id: createBookingDto.service,
-                patient_name: createBookingDto.name,
-                patient_phone: createBookingDto.phone,
-                gender: createBookingDto.gender ?? null,
-                age: createBookingDto.age ?? null,
-                symptoms: createBookingDto.symptoms ?? null,
-                booking_time: createBookingDto.booking_time,
-                status: 'pending',
-            })
-            .select('id')
-            .single();
-
-        if (bookingError || !booking) {
-            throw new BadRequestException(bookingError?.message ?? 'Create booking failed');
-        }
-
-        // Create payment
-        const { error: paymentError } = await this.supabaseService
-            .getAdminClient()
-            .from('payments')
-            .insert({
-                booking_id: booking.id,
-                amount: 2000,
-                method: 'banking',
-                status: 'pending',
+        try {
+            // Create booking
+            const booking = await this.prisma.booking.create({
+                data: {
+                    userId: userId ?? null,
+                    clinicId: createBookingDto.clinic,
+                    serviceId: createBookingDto.service,
+                    patientName: createBookingDto.name,
+                    patientPhone: createBookingDto.phone,
+                    gender: createBookingDto.gender ?? null,
+                    age: createBookingDto.age ?? null,
+                    symptoms: createBookingDto.symptoms ?? null,
+                    bookingTime: new Date(createBookingDto.booking_time),
+                    status: 'pending',
+                },
             });
 
-        if (paymentError) {
-            throw new BadRequestException(paymentError.message);
-        }
+            // Create payment
+            await this.prisma.payment.create({
+                data: {
+                    bookingId: booking.id,
+                    amount: 2000,
+                    method: 'banking',
+                    status: 'pending',
+                },
+            });
 
-        return { bookingId: booking.id };
+            return { bookingId: booking.id };
+        } catch (error: any) {
+            throw new BadRequestException(error?.message ?? 'Create booking failed');
+        }
     }
 
     /**
@@ -99,54 +90,48 @@ export class BookingsService {
             throw new BadRequestException('MISSING_ID');
         }
 
-        const { data: booking, error } = await this.supabaseService
-            .getAdminClient()
-            .from('bookings')
-            .select(
-                `
-        id,
-        status,
-        created_at,
-        payments (
-          amount,
-          status
-        )
-      `,
-            )
-            .eq('id', bookingId)
-            .single();
+        const booking = await this.prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: {
+                payment: {
+                    select: {
+                        amount: true,
+                        status: true,
+                    },
+                },
+            },
+        });
 
-        if (error || !booking) {
+        if (!booking) {
             throw new NotFoundException('NOT_FOUND');
         }
 
-        const amount = 2000;
+        const amount = booking.payment?.amount ?? 2000;
 
         // Check if expired
         if (
             booking.status === 'pending' &&
-            booking.created_at &&
-            this.isExpired(booking.created_at, 5)
+            booking.createdAt &&
+            this.isExpired(booking.createdAt, 5)
         ) {
-            await this.supabaseService
-                .getAdminClient()
-                .from('bookings')
-                .update({ status: 'expired' })
-                .eq('id', bookingId);
+            await this.prisma.booking.update({
+                where: { id: bookingId },
+                data: { status: 'expired' },
+            });
 
             return {
                 id: booking.id,
                 status: 'expired',
                 amount,
-                created_at: booking.created_at,
+                created_at: booking.createdAt.toISOString(),
             };
         }
 
         return {
             id: booking.id,
-            status: booking.status,
+            status: booking.status ?? 'pending',
             amount,
-            created_at: booking.created_at,
+            created_at: booking.createdAt?.toISOString(),
         };
     }
 }

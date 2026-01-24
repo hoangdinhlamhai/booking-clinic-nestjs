@@ -1,22 +1,21 @@
 import { Injectable } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
-import { Service } from '../supabase/types';
+import { PrismaService } from '../prisma';
 
 @Injectable()
 export class ServicesService {
-    constructor(private supabaseService: SupabaseService) { }
+    constructor(private prisma: PrismaService) { }
 
-    async findAll(): Promise<Pick<Service, 'id' | 'name'>[]> {
-        const { data, error } = await this.supabaseService
-            .getAdminClient()
-            .from('services')
-            .select('id, name')
-            .order('name', { ascending: true });
+    async findAll(): Promise<{ id: string; name: string }[]> {
+        const services = await this.prisma.service.findMany({
+            select: {
+                id: true,
+                name: true,
+            },
+            orderBy: {
+                name: 'asc',
+            },
+        });
 
-        if (error) {
-            throw new Error(error.message);
-        }
-
-        return data ?? [];
+        return services;
     }
 }

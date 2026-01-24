@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { SupabaseModule } from './supabase';
+import { PrismaModule } from './prisma';
 import { ClinicsModule } from './clinics';
 import { ServicesModule } from './services';
 import { AuthModule } from './auth';
@@ -17,8 +17,8 @@ import { BookingsModule } from './bookings';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    // Kết nối Supabase
-    SupabaseModule,
+    // Kết nối Database với Prisma ORM
+    PrismaModule,
     // Feature Modules
     AuthModule,
     ClinicsModule,

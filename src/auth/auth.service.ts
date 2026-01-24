@@ -1,13 +1,13 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma';
 import { LoginDto, RegisterDto } from './dto';
 
 @Injectable()
 export class AuthService {
     constructor(
-        private supabaseService: SupabaseService,
+        private prisma: PrismaService,
         private jwtService: JwtService,
     ) { }
 
@@ -19,14 +19,11 @@ export class AuthService {
         }
 
         // 1. Find user
-        const { data: user, error } = await this.supabaseService
-            .getAdminClient()
-            .from('users')
-            .select('*')
-            .eq('email', email)
-            .single();
+        const user = await this.prisma.user.findFirst({
+            where: { email },
+        });
 
-        if (error || !user) {
+        if (!user) {
             throw new UnauthorizedException('Tài khoản không tồn tại');
         }
 
@@ -46,7 +43,7 @@ export class AuthService {
             role: user.role,
             name: user.name,
             email: user.email,
-            picture: user.avatar_url,
+            picture: user.avatarUrl,
         };
 
         const token = this.jwtService.sign(payload);
@@ -60,7 +57,7 @@ export class AuthService {
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                image: user.avatar_url,
+                image: user.avatarUrl,
             },
         };
     }
@@ -73,12 +70,9 @@ export class AuthService {
         }
 
         // Check existing user
-        const { data: existingUser } = await this.supabaseService
-            .getAdminClient()
-            .from('users')
-            .select('id')
-            .eq('email', email)
-            .single();
+        const existingUser = await this.prisma.user.findFirst({
+            where: { email },
+        });
 
         if (existingUser) {
             throw new BadRequestException('Email này đã được đăng ký');
@@ -88,16 +82,18 @@ export class AuthService {
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Insert new user
-        const { error } = await this.supabaseService.getAdminClient().from('users').insert({
-            email,
-            name,
-            password: hashedPassword,
-            provider: 'credentials',
-            is_active: true,
-            role: 'patient',
-        });
-
-        if (error) {
+        try {
+            await this.prisma.user.create({
+                data: {
+                    email,
+                    name,
+                    password: hashedPassword,
+                    provider: 'credentials',
+                    isActive: true,
+                    role: 'patient',
+                },
+            });
+        } catch (error) {
             console.error('Registration error:', error);
             throw new BadRequestException('Đã có lỗi xảy ra khi đăng ký');
         }
@@ -127,4 +123,3 @@ export class AuthService {
         }
     }
 }
-

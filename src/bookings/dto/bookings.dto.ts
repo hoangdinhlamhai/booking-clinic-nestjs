@@ -14,5 +14,5 @@ export interface BookingResponse {
     id: string;
     status: string;
     amount: number;
-    created_at: string;
+    created_at?: string;
 }

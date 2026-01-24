@@ -1,10 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { SupabaseService } from '../supabase/supabase.service';
+import { PrismaService } from '../prisma';
 import { GetAvailableSlotsDto, SlotStat } from './dto';
 
 @Injectable()
 export class AvailableSlotsService {
-    constructor(private supabaseService: SupabaseService) { }
+    constructor(private prisma: PrismaService) { }
 
     /**
      * Convert time string (HH:MM) to minutes
@@ -23,6 +23,13 @@ export class AvailableSlotsService {
         return `${hh}:${mm}`;
     }
 
+    /**
+     * Format Date to time string (HH:MM)
+     */
+    private dateToTimeString(date: Date): string {
+        return date.toTimeString().slice(0, 5);
+    }
+
     async getAvailableSlots(params: GetAvailableSlotsDto): Promise<SlotStat[]> {
         const { clinic_id, service_id, date } = params;
 
@@ -31,67 +38,72 @@ export class AvailableSlotsService {
         }
 
         // Get service duration
-        const { data: service, error: serviceErr } = await this.supabaseService
-            .getAdminClient()
-            .from('services')
-            .select('duration_minutes')
-            .eq('id', service_id)
-            .single();
+        const service = await this.prisma.service.findUnique({
+            where: { id: service_id },
+            select: { durationMinutes: true },
+        });
 
-        if (serviceErr || !service) {
+        if (!service) {
             throw new NotFoundException('Service not found');
         }
-        const duration = service.duration_minutes ?? 30;
+        const duration = service.durationMinutes ?? 30;
 
         // Get doctors for this clinic and service
-        const { data: doctors, error: docErr } = await this.supabaseService
-            .getAdminClient()
-            .from('doctors')
-            .select('id, doctor_services!inner(service_id)')
-            .eq('clinic_id', clinic_id)
-            .eq('is_available', true)
-            .eq('doctor_services.service_id', service_id);
+        const doctors = await this.prisma.doctor.findMany({
+            where: {
+                clinicId: clinic_id,
+                isAvailable: true,
+                doctorServices: {
+                    some: {
+                        serviceId: service_id,
+                    },
+                },
+            },
+            select: { id: true },
+        });
 
-        if (docErr) {
-            throw new Error(docErr.message);
-        }
         if (!doctors?.length) return [];
 
         const doctorIds = doctors.map((d) => d.id);
 
         // Get schedules for these doctors on this date
-        const { data: schedules, error: schErr } = await this.supabaseService
-            .getAdminClient()
-            .from('doctor_schedules')
-            .select('doctor_id, start_time, end_time, max_patients')
-            .eq('date', date)
-            .eq('is_available', true)
-            .in('doctor_id', doctorIds);
+        const schedules = await this.prisma.doctorSchedule.findMany({
+            where: {
+                date: new Date(date),
+                isAvailable: true,
+                doctorId: { in: doctorIds },
+            },
+            select: {
+                doctorId: true,
+                startTime: true,
+                endTime: true,
+                maxPatients: true,
+            },
+        });
 
-        if (schErr) {
-            throw new Error(schErr.message);
-        }
         if (!schedules?.length) return [];
 
         // Get existing bookings for this date
-        const { data: bookings, error: bookErr } = await this.supabaseService
-            .getAdminClient()
-            .from('bookings')
-            .select('booking_time')
-            .eq('clinic_id', clinic_id)
-            .eq('service_id', service_id)
-            .in('status', ['pending', 'paid'])
-            .gte('booking_time', `${date} 00:00:00`)
-            .lte('booking_time', `${date} 23:59:59`);
+        const startOfDay = new Date(`${date}T00:00:00`);
+        const endOfDay = new Date(`${date}T23:59:59`);
 
-        if (bookErr) {
-            throw new Error(bookErr.message);
-        }
+        const bookings = await this.prisma.booking.findMany({
+            where: {
+                clinicId: clinic_id,
+                serviceId: service_id,
+                status: { in: ['pending', 'paid'] },
+                bookingTime: {
+                    gte: startOfDay,
+                    lte: endOfDay,
+                },
+            },
+            select: { bookingTime: true },
+        });
 
         // Count bookings by time slot
         const bookedByTime = new Map<string, number>();
         for (const b of bookings ?? []) {
-            const hhmm = String(b.booking_time).slice(11, 16);
+            const hhmm = b.bookingTime.toTimeString().slice(0, 5);
             bookedByTime.set(hhmm, (bookedByTime.get(hhmm) ?? 0) + 1);
         }
 
@@ -99,9 +111,9 @@ export class AvailableSlotsService {
         const capacityByTime = new Map<string, number>();
 
         for (const s of schedules) {
-            const start = this.timeToMinutes(String(s.start_time));
-            const end = this.timeToMinutes(String(s.end_time));
-            const capPerSlot = s.max_patients ?? 0;
+            const start = this.timeToMinutes(this.dateToTimeString(s.startTime));
+            const end = this.timeToMinutes(this.dateToTimeString(s.endTime));
+            const capPerSlot = s.maxPatients ?? 0;
 
             for (let t = start; t + duration <= end; t += duration) {
                 const hhmm = this.minutesToHHMM(t);
