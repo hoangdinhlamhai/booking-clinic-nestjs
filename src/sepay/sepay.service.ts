@@ -18,15 +18,17 @@ export class SepayService {
      * Handle Sepay webhook
      */
     async handleWebhook(payload: SepayWebhookPayload) {
-        console.log('SEPAY WEBHOOK PAYLOAD:', payload);
+        console.log('=== SEPAY WEBHOOK START ===');
+        console.log('FULL PAYLOAD:', JSON.stringify(payload, null, 2));
 
         // Only process incoming transfers
         if (payload?.transferType !== 'in') {
+            console.log('SKIPPED: Not an incoming transfer');
             return { ok: true };
         }
 
         const rawContent = payload?.content ?? payload?.description ?? '';
-
+        console.log('RAW CONTENT:', rawContent);
 
         const match = rawContent.match(/DATLICH[\s._-]?([a-zA-Z0-9-]+)/i);
 
@@ -45,8 +47,10 @@ export class SepayService {
         }
 
         const paidAmount = Number(payload?.transferAmount ?? 0);
+        console.log('PAID AMOUNT:', paidAmount);
 
         // Get booking
+        console.log('LOOKING UP BOOKING ID:', bookingId);
         const { data: booking, error: bookingErr } = await this.supabaseService
             .getAdminClient()
             .from('bookings')
@@ -54,17 +58,21 @@ export class SepayService {
             .eq('id', bookingId)
             .single();
 
+        console.log('BOOKING LOOKUP RESULT:', { booking, error: bookingErr });
+
         if (bookingErr || !booking) {
-            console.error('BOOKING NOT FOUND:', bookingId);
+            console.error('BOOKING NOT FOUND:', bookingId, 'ERROR:', bookingErr);
             return { ok: true };
         }
 
         // Already paid
         if (booking.status === 'paid') {
+            console.log('BOOKING ALREADY PAID:', bookingId);
             return { ok: true, alreadyPaid: true };
         }
 
         // Get payment
+        console.log('LOOKING UP PAYMENT FOR BOOKING:', booking.id);
         const { data: payment, error: payErr } = await this.supabaseService
             .getAdminClient()
             .from('payments')
@@ -73,19 +81,23 @@ export class SepayService {
             .eq('status', 'pending')
             .single();
 
+        console.log('PAYMENT LOOKUP RESULT:', { payment, error: payErr });
+
         if (payErr || !payment) {
-            console.error('PAYMENT NOT FOUND:', bookingId);
+            console.error('PAYMENT NOT FOUND FOR BOOKING:', bookingId, 'ERROR:', payErr);
             return { ok: true };
         }
 
         // Check amount
+        console.log('COMPARING AMOUNTS - PAID:', paidAmount, 'EXPECTED:', payment.amount);
         if (paidAmount < Number(payment.amount)) {
             console.error('AMOUNT NOT ENOUGH:', paidAmount, 'EXPECTED:', payment.amount);
             return { ok: true };
         }
 
         // Update payment status
-        await this.supabaseService
+        console.log('UPDATING PAYMENT STATUS TO PAID...');
+        const { error: updatePaymentErr } = await this.supabaseService
             .getAdminClient()
             .from('payments')
             .update({
@@ -96,14 +108,23 @@ export class SepayService {
             })
             .eq('id', payment.id);
 
+        if (updatePaymentErr) {
+            console.error('FAILED TO UPDATE PAYMENT:', updatePaymentErr);
+        }
+
         // Update booking status
-        await this.supabaseService
+        console.log('UPDATING BOOKING STATUS TO PAID...');
+        const { error: updateBookingErr } = await this.supabaseService
             .getAdminClient()
             .from('bookings')
             .update({ status: 'paid' })
             .eq('id', booking.id);
 
-        console.log('BOOKING PAID:', bookingId);
+        if (updateBookingErr) {
+            console.error('FAILED TO UPDATE BOOKING:', updateBookingErr);
+        }
+
+        console.log('=== BOOKING PAID SUCCESSFULLY:', bookingId, '===');
 
         return { success: true };
     }
