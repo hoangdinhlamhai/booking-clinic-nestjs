@@ -3,11 +3,15 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Reduce binary size
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Connection pool settings for low memory VPS (2GB RAM)
+  // Format: postgresql://user:pass@host:port/db?connection_limit=5&pool_timeout=10
 }
 
 model User {

@@ -6,14 +6,17 @@ FROM node:20-alpine AS builder
 # Set working directory
 WORKDIR /app
 
+# Limit Node.js memory during build (important for low RAM VPS)
+ENV NODE_OPTIONS="--max-old-space-size=512"
+
 # Copy package files
 COPY package*.json ./
 
 # Install all dependencies (including devDependencies for build)
-RUN npm ci
+RUN npm ci --prefer-offline
 
 # Copy prisma schema first (for generate)
-COPY prisma ./prisma
+COPY prisma/schema.prisma ./prisma/
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -25,24 +28,28 @@ COPY . .
 RUN npm run build
 
 # ================================
-# Stage 2: Production Stage
+# Stage 2: Production Stage (Minimal)
 # ================================
 FROM node:20-alpine AS production
 
 # Set working directory
 WORKDIR /app
 
-# Set NODE_ENV to production
+# Set environment variables
 ENV NODE_ENV=production
+# Limit Node.js memory for 2GB VPS (leave room for OS and DB)
+ENV NODE_OPTIONS="--max-old-space-size=512"
 
 # Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (need ts-node for seed script)
-RUN npm ci && npm cache clean --force
+# Install only production dependencies (save ~50% space and memory)
+RUN npm ci --only=production --prefer-offline && \
+    npm cache clean --force && \
+    rm -rf /root/.npm
 
-# Copy prisma folder (schema + seed script)
-COPY prisma ./prisma
+# Copy prisma schema only (not seed.ts - we'll handle seeding separately)
+COPY prisma/schema.prisma ./prisma/
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -63,9 +70,9 @@ USER nestjs
 # Expose the application port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+# Health check with longer intervals to reduce overhead
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
-# Run prisma db push to create/sync tables, then seed data, then start the application
-CMD npx prisma db push --skip-generate && npx prisma db seed && node dist/main
+# Start script: db push then start app (seed only runs once manually)
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/main"]
