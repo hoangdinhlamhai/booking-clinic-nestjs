@@ -12,6 +12,12 @@ COPY package*.json ./
 # Install all dependencies (including devDependencies for build)
 RUN npm ci
 
+# Copy prisma schema first (for generate)
+COPY prisma ./prisma
+
+# Generate Prisma Client
+RUN npx prisma generate
+
 # Copy source code
 COPY . .
 
@@ -34,6 +40,10 @@ COPY package*.json ./
 
 # Install only production dependencies
 RUN npm ci --only=production && npm cache clean --force
+
+# Copy prisma schema and generate Prisma Client
+COPY prisma ./prisma
+RUN npx prisma generate
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
