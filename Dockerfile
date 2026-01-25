@@ -79,5 +79,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
-# Start script: db push then start app
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/main"]
+# Start script: db push then start app (main.js is in dist/src/)
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/src/main.js"]
