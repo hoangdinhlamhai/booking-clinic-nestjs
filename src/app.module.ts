@@ -9,6 +9,7 @@ import { AuthModule } from './auth';
 import { SepayModule } from './sepay';
 import { AvailableSlotsModule } from './available-slots';
 import { BookingsModule } from './bookings';
+import { MeaModule } from './mea';
 
 @Module({
   imports: [
@@ -26,6 +27,8 @@ import { BookingsModule } from './bookings';
     SepayModule,
     AvailableSlotsModule,
     BookingsModule,
+    // Medical Examination Assistant (AI-powered features)
+    MeaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
