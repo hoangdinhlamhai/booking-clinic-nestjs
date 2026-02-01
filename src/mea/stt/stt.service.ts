@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { getGroqClient, GROQ_MODEL_STANDARD } from '../agents/models/groq.models';
+import { ollamaChat, OLLAMA_MODEL } from '../agents/models/ollama.models';
 import {
     TranscriptSegment,
     ProcessedSegment,
@@ -252,16 +252,13 @@ Ví dụ: [{"index": 0, "role": "Bác sĩ", "confidence": 0.95}, {"index": 1, "r
 CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.`;
 
         try {
-            this.logger.debug('🔍 Analyzing speaker roles with enhanced prompt...');
+            this.logger.debug(`🔍 Analyzing speaker roles with Ollama (${OLLAMA_MODEL})...`);
 
-            const groq = getGroqClient();
-            const completion = await groq.chat.completions.create({
-                messages: [{ role: 'user', content: prompt }],
-                model: GROQ_MODEL_STANDARD,
-                temperature: 0.05, // Lower for more consistent results
-            });
+            const responseText = await ollamaChat(
+                [{ role: 'user', content: prompt }],
+                { temperature: 0.05, jsonFormat: true },
+            );
 
-            const responseText = completion.choices[0]?.message?.content || '';
             this.logger.debug(`Role detection response: ${responseText.substring(0, 200)}...`);
 
             // Extract JSON
@@ -456,12 +453,9 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.`;
         this.logger.debug(`Dictionary pre-process: "${text}" → "${preprocessed}"`);
 
         try {
-            const groq = getGroqClient();
-            const completion = await groq.chat.completions.create({
-                messages: [
-                    {
-                        role: 'system',
-                        content: `Bạn là chuyên gia hiệu chỉnh văn bản y khoa tiếng Việt từ Speech-to-Text.
+            this.logger.debug(`🩺 Fixing medical text with Ollama (${OLLAMA_MODEL})...`);
+
+            const systemPrompt = `Bạn là chuyên gia hiệu chỉnh văn bản y khoa tiếng Việt từ Speech-to-Text.
 
 ## NHIỆM VỤ
 Sửa lỗi chính tả, phát âm sai, từ viết tắt, và từ bị nuốt âm do nói nhanh trong ngữ cảnh y khoa.
@@ -496,21 +490,22 @@ Sửa lỗi chính tả, phát âm sai, từ viết tắt, và từ bị nuốt 
 - Dựa vào ngữ cảnh y khoa để chọn từ phù hợp
 
 ## OUTPUT
-Trả về CHÍNH XÁC đoạn văn đã sửa lỗi, KHÔNG giải thích hay thêm bất kỳ text nào khác.`,
-                    },
+Trả về CHÍNH XÁC đoạn văn đã sửa lỗi, KHÔNG giải thích hay thêm bất kỳ text nào khác.`;
+
+            const result = await ollamaChat(
+                [
+                    { role: 'system', content: systemPrompt },
                     { role: 'user', content: preprocessed },
                 ],
-                model: GROQ_MODEL_STANDARD,
-                temperature: 0.02, // Very low for consistent corrections
-            });
+                { temperature: 0.02 },
+            );
 
             // Add artificial delay to respect rate limits if calling in loop
             await new Promise((resolve) => setTimeout(resolve, 150));
 
-            const result = completion.choices[0]?.message?.content || preprocessed;
             this.logger.debug(`LLM fix: "${preprocessed}" → "${result}"`);
 
-            return result;
+            return result || preprocessed;
         } catch (error) {
             this.logger.error('❌ Medical fixer error:', error);
             // Return preprocessed text (dictionary-only fixes)
