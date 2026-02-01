@@ -189,6 +189,19 @@ export class VectorStoreService implements OnModuleInit {
     }
 
     /**
+     * Similarity search with scores for relevance filtering
+     * @param query Search query
+     * @param k Number of results to return
+     * @returns Array of [Document, score] tuples
+     */
+    async similaritySearchWithScore(query: string, k: number = 3): Promise<[Document, number][]> {
+        if (!this.store) {
+            throw new Error('Vector Store not initialized. Check GOOGLE_API_KEY.');
+        }
+        return this.store.similaritySearchWithScore(query, k);
+    }
+
+    /**
      * Check if vector store is ready
      */
     isReady(): boolean {

@@ -34,9 +34,9 @@ export class SttController {
             throw new BadRequestException('Audio file is required');
         }
 
-        this.logger.log(`📁 Received file: ${file.originalname} (${file.size} bytes)`);
+        this.logger.log(`📁 Received file: ${file.originalname} (${file.size} bytes, ${file.mimetype})`);
 
-        const result = await this.sttService.processAudioFile(file.buffer);
+        const result = await this.sttService.processAudioFile(file.buffer, file.mimetype);
 
         return {
             success: result.success,
