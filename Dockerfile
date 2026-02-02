@@ -80,4 +80,5 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1
 
 # Start script: db push then start app (main.js is in dist/src/)
-CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/src/main.js"]
+# IMPORTANT: Do NOT use --accept-data-loss flag as it can drop tables on schema changes
+CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/src/main.js"]

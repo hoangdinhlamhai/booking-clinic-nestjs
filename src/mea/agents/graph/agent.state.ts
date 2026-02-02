@@ -4,6 +4,14 @@
  * This interface defines the shared state that flows between AI agents
  * in the LangGraph workflow.
  */
+
+/** ICD-10 code with description and confidence */
+export interface IcdCode {
+    code: string;
+    description: string;
+    confidence: number;
+}
+
 export interface AgentState {
     /** Raw transcript from speech-to-text */
     transcript: string; //input
@@ -18,7 +26,7 @@ export interface AgentState {
     };
 
     /** ICD-10 codes suggested by ICD Agent */
-    icdCodes: string[]; // Output từ ICD Agent
+    icdCodes: IcdCode[]; // Output từ ICD Agent
 
     /** Medical advice from Expert Agent (RAG-based) */
     medicalAdvice: string; // Output từ Expert Agent
