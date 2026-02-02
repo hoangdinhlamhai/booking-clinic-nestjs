@@ -112,15 +112,37 @@ Ví dụ:
             const codes = Array.isArray(parsed)
                 ? parsed
                 : parsed.codes || parsed.icd_codes || [];
-            const finalCodes = Array.isArray(codes)
-                ? codes.map((c) => String(c))
-                : [];
+            // Parse string codes into object format for frontend
+            const formattedCodes = (Array.isArray(codes) ? codes : []).map((c, index) => {
+                const codeStr = String(c);
+                // Parse "K29.7 - Viêm dạ dày" format
+                const match = codeStr.match(/^([A-Z]\d+\.?\d*)\s*[-–]\s*(.+)$/i);
+                if (match) {
+                    return {
+                        code: match[1].toUpperCase(),
+                        description: match[2].trim(),
+                        confidence: Math.max(0.5, 1 - index * 0.1), // First code has highest confidence
+                    };
+                }
+                // Fallback if format doesn't match
+                return {
+                    code: codeStr.split(/[-–]/)[0]?.trim() || codeStr,
+                    description: codeStr.split(/[-–]/).slice(1).join('-').trim() || 'Không có mô tả',
+                    confidence: 0.5,
+                };
+            });
 
-            this.logger.log(`✅ ICD-10 Agent found ${finalCodes.length} codes`);
-            return { icdCodes: finalCodes };
+            this.logger.log(`✅ ICD-10 Agent found ${formattedCodes.length} codes`);
+            return { icdCodes: formattedCodes };
         } catch (error) {
             this.logger.error('❌ ICD-10 Agent Error:', error);
-            return { icdCodes: ['Error retrieving ICD codes'] };
+            return {
+                icdCodes: [{
+                    code: 'ERROR',
+                    description: 'Lỗi lấy mã ICD-10',
+                    confidence: 0
+                }]
+            };
         }
     }
 

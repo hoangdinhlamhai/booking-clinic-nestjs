@@ -46,7 +46,7 @@ export class MedicalAgentGraphService {
                 }),
             },
             icdCodes: {
-                value: (x: string[], y: string[]) => y ?? x,
+                value: (x: { code: string; description: string; confidence: number }[], y: { code: string; description: string; confidence: number }[]) => y ?? x,
                 default: () => [],
             },
             medicalAdvice: {
