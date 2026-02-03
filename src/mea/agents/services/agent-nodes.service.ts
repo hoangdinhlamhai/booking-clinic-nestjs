@@ -3,6 +3,11 @@ import { AgentState } from '../graph/agent.state';
 import { VectorStoreService } from '../../rag/vectorstore.service';
 import { Document } from '@langchain/core/documents';
 import { ollamaChat, OLLAMA_MODEL } from '../models/ollama.models';
+import Groq from 'groq-sdk';
+
+// Groq configuration for Scribe/Expert (faster than CPU Ollama)
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const getGroqClient = () => new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 /**
  * Agent Nodes Service (Ollama Version)
@@ -22,14 +27,14 @@ export class AgentNodesService {
     constructor(private readonly vectorStoreService: VectorStoreService) { }
 
     /**
-     * SCRIBE AGENT
+     * SCRIBE AGENT (Groq)
      * Converts medical conversation transcript into structured SOAP notes.
      * 
      * @param state Current agent state with transcript
      * @returns Partial state with SOAP notes
      */
     async scribeNode(state: AgentState): Promise<Partial<AgentState>> {
-        this.logger.log(`📝 Scribe Agent working (Ollama ${OLLAMA_MODEL})...`);
+        this.logger.log(`📝 Scribe Agent working (Groq ${GROQ_MODEL})...`);
 
         const prompt = `Bạn là thư ký y khoa chuyên nghiệp.
 Nhiệm vụ: Chuyển transcript hội thoại thành bệnh án chuẩn SOAP tiếng Việt.
@@ -47,11 +52,15 @@ Yêu cầu output JSON format:
 Chỉ trả về JSON hợp lệ, không có text khác.`;
 
         try {
-            const content = await ollamaChat(
-                [{ role: 'user', content: prompt }],
-                { temperature: 0.1, jsonFormat: true },
-            );
+            const groq = getGroqClient();
+            const completion = await groq.chat.completions.create({
+                messages: [{ role: 'user', content: prompt }],
+                model: GROQ_MODEL,
+                temperature: 0.1,
+                response_format: { type: 'json_object' },
+            });
 
+            const content = completion.choices[0]?.message?.content || '{}';
             const soap = JSON.parse(content);
 
             this.logger.log('✅ Scribe Agent completed');
@@ -208,10 +217,14 @@ YÊU CẦU (PHẢI TRẢ LỜI BẰNG TIẾNG VIỆT):
 
 LƯU Ý: KHÔNG dùng tiếng Anh. Tất cả phải bằng TIẾNG VIỆT.`;
 
-            const adviceContent = await ollamaChat(
-                [{ role: 'user', content: prompt }],
-                { temperature: 0.2 },
-            );
+            const groq = getGroqClient();
+            const completion = await groq.chat.completions.create({
+                messages: [{ role: 'user', content: prompt }],
+                model: GROQ_MODEL,
+                temperature: 0.2,
+            });
+
+            const adviceContent = completion.choices[0]?.message?.content || '';
 
             this.logger.log(`✅ Expert Agent completed with ${references.length} references`);
             return {
@@ -251,10 +264,14 @@ YÊU CẦU:
 LƯU Ý: Tất cả phải bằng TIẾNG VIỆT.`;
 
         try {
-            const adviceContent = await ollamaChat(
-                [{ role: 'user', content: prompt }],
-                { temperature: 0.3 },
-            );
+            const groq = getGroqClient();
+            const completion = await groq.chat.completions.create({
+                messages: [{ role: 'user', content: prompt }],
+                model: GROQ_MODEL,
+                temperature: 0.3,
+            });
+
+            const adviceContent = completion.choices[0]?.message?.content || '';
 
             return {
                 medicalAdvice: `📌 **Lưu ý**: Không tìm thấy phác đồ điều trị cụ thể trong cơ sở dữ liệu. Dưới đây là gợi ý dựa trên kiến thức y khoa chung.\n\n${adviceContent}`,

@@ -6,11 +6,14 @@ import {
     SttProcessingResult,
 } from './dto/stt-response.dto';
 
+// Local Whisper configuration
+const WHISPER_URL = process.env.WHISPER_URL || 'http://localhost:9000';
+
 /**
  * Speech-to-Text Service
  * 
  * Processes audio recordings through a pipeline:
- * 1. Whisper STT (Groq) - Audio → Text
+ * 1. Whisper STT (Local or Groq) - Audio → Text
  * 2. LLM Role Detection - Identify Doctor vs Patient
  * 3. Medical Text Fixer - Fix pronunciation errors in medical terms
  */
@@ -19,7 +22,63 @@ export class SttService {
     private readonly logger = new Logger(SttService.name);
 
     /**
-     * Call Groq Whisper API to transcribe audio to text
+     * Call LOCAL Whisper API (Faster-Whisper Server) to transcribe audio
+     * 
+     * @param audioBlob Audio buffer (WAV, MP3, etc.)
+     * @returns Transcription with text and segments
+     */
+    async transcribeWithLocalWhisper(
+        audioBlob: Buffer,
+        mimeType: string = 'audio/webm',
+    ): Promise<{ text: string; segments: TranscriptSegment[] }> {
+        const formData = new FormData();
+        const uint8Array = new Uint8Array(audioBlob);
+
+        // Determine file extension from mime type
+        const extensionMap: Record<string, string> = {
+            'audio/webm': 'webm',
+            'audio/mp4': 'm4a',
+            'audio/mpeg': 'mp3',
+            'audio/wav': 'wav',
+            'audio/ogg': 'ogg',
+            'audio/flac': 'flac',
+        };
+        const extension = extensionMap[mimeType] || 'webm';
+        const filename = `recording.${extension}`;
+
+        this.logger.log(`🎵 [Local Whisper] Processing audio: ${mimeType} → ${filename}`);
+
+        const blob = new Blob([uint8Array], { type: mimeType });
+        formData.append('file', blob, filename);
+        formData.append('model', 'Systran/faster-whisper-large-v3');
+        formData.append('language', 'vi');
+        formData.append('response_format', 'verbose_json');
+
+        const response = await fetch(
+            `${WHISPER_URL}/v1/audio/transcriptions`,
+            {
+                method: 'POST',
+                body: formData,
+            },
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            this.logger.error(`Local Whisper error: ${response.status} - ${errorText}`);
+            throw new Error(`Local Whisper error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        this.logger.log(`✅ [Local Whisper] Transcribed: "${data.text?.substring(0, 50)}..."`);
+
+        return {
+            text: data.text || '',
+            segments: data.segments || [],
+        };
+    }
+
+    /**
+     * Call Groq Whisper API to transcribe audio to text (Cloud fallback)
      * 
      * @param audioBlob Audio buffer (WAV, MP3, etc.)
      * @returns Transcription with text and segments
@@ -44,7 +103,7 @@ export class SttService {
         const extension = extensionMap[mimeType] || 'webm';
         const filename = `recording.${extension}`;
 
-        this.logger.log(`🎵 Processing audio: ${mimeType} → ${filename}`);
+        this.logger.log(`🎵 [Groq Whisper] Processing audio: ${mimeType} → ${filename}`);
 
         const blob = new Blob([uint8Array], { type: mimeType });
         formData.append('file', blob, filename);
@@ -526,8 +585,18 @@ Trả về CHÍNH XÁC đoạn văn đã sửa lỗi, KHÔNG giải thích hay t
             this.logger.log(`🎤 Received audio: ${audioBuffer.length} bytes (${mimeType})`);
 
             // Step 1: Whisper STT - Convert audio to text
-            this.logger.log('🔊 Running Whisper STT...');
-            const transcription = await this.transcribeWithGroq(audioBuffer, mimeType);
+            // Try local Whisper first, fallback to Groq if failed
+            let transcription: { text: string; segments: TranscriptSegment[] };
+
+            try {
+                this.logger.log('🔊 Running Local Whisper STT...');
+                transcription = await this.transcribeWithLocalWhisper(audioBuffer, mimeType);
+            } catch (localError) {
+                this.logger.warn(`⚠️ Local Whisper failed, falling back to Groq: ${localError.message}`);
+                this.logger.log('🔊 Running Groq Whisper STT (fallback)...');
+                transcription = await this.transcribeWithGroq(audioBuffer, mimeType);
+            }
+
             this.logger.log(`📝 Transcription: ${transcription.text.substring(0, 100)}...`);
             this.logger.debug(`📊 Segments count: ${transcription.segments.length}`);
 

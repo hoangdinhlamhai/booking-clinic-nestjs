@@ -32,7 +32,7 @@ export interface OllamaGenerateResponse {
 
 // Ollama configuration
 export const OLLAMA_BASE_URL = process.env.OLLAMA_URL || 'http://localhost:11434';
-export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3:8b';
+export const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.2:3b';
 
 /**
  * Generate completion using Ollama API
@@ -94,9 +94,15 @@ export async function ollamaChat(
         model?: string;
         temperature?: number;
         jsonFormat?: boolean;
+        timeoutMs?: number;
     } = {},
 ): Promise<string> {
-    const { model = OLLAMA_MODEL, temperature = 0.1, jsonFormat = false } = options;
+    const {
+        model = OLLAMA_MODEL,
+        temperature = 0.1,
+        jsonFormat = false,
+        timeoutMs = 300000, // 5 minutes default for CPU inference
+    } = options;
 
     const requestBody = {
         model,
@@ -105,22 +111,37 @@ export async function ollamaChat(
         format: jsonFormat ? 'json' : undefined,
         options: {
             temperature,
-            num_ctx: 4096,
+            num_ctx: 2048, // Reduced for faster CPU inference
         },
     };
 
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-    });
+    // AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-        throw new Error(`Ollama Chat API error: ${response.status} ${response.statusText}`);
+    try {
+        const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`Ollama Chat API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        return data.message?.content || '';
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error(`Ollama timeout after ${timeoutMs / 1000}s - CPU inference too slow`);
+        }
+        throw error;
     }
-
-    const data = await response.json();
-    return data.message?.content || '';
 }
